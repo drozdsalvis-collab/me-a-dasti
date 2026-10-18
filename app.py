@@ -11,7 +11,8 @@ st.write("Augšupielādē audio ierakstu, un programma automātiski aizpildīs d
 
 @st.cache_resource
 def load_whisper_model():
-    return whisper.load_model("small")
+    # Izmantojam 'base' modeli, kas nelieto par daudz atmiņas un strādā bez kļūdām
+    return whisper.load_model("base")
 
 with st.spinner("Notiek balss atpazīšanas modeļa ielāde..."):
     model = load_whisper_model()
@@ -26,19 +27,21 @@ def parse_diametrs(word):
     if word_clean.isdigit():
         return int(word_clean)
     
-    # Pielāgojamies Whisper fonētiskajām kļūdām skaitļos
-    if "čaitr" in word_clean or "četr" in word_clean:
+    # Pielāgojamies Whisper fonētiskajām kļūdām skaitļos un vārdos
+    if "čaitr" in word_clean or "četr" in word_clean or "četri" in word_clean or "štētri" in word_clean:
         return 24
-    if "diod" in word_clean or "divp" in word_clean:
+    if "diod" in word_clean or "divp" in word_clean or "divas" in word_clean:
         return 12
-    if "sašt" in word_clean or "sešp" in word_clean:
+    if "sašt" in word_clean or "sešp" in word_clean or "sešpadsmit" in word_clean:
         return 16
     if "astoņ" in word_clean:
         return 8
-    if "divd" in word_clean:
+    if "divd" in word_clean or "divdesmit" in word_clean:
         return 20
     if "tasto" in word_clean or "trīs" in word_clean:
         return 32
+    if "desmit" in word_clean or "des" in word_clean:
+        return 10
     
     return None
 
@@ -70,7 +73,7 @@ def parsat_tekstu(teksts):
     while i < len(words):
         word = words[i].strip(",.-")
         
-        # Stāvi (ņemot vērā arī Whisper kļūdu "oģrā" -> otrā stāva nozīmē)
+        # Stāvi
         if word in ["pirmais", "1.", "pirmā"]:
             rekošais_stavs = "1. stāvs"
             i += 1
@@ -79,20 +82,13 @@ def parsat_tekstu(teksts):
             rekošais_stavs = "2. stāvs"
             i += 1
             continue
-        elif word == "stāvs" and i + 1 < len(words):
-            if words[i+1] in ["1", "pirmais"]:
-                rekošais_stavs = "1. stāvs"
-            elif words[i+1] in ["2", "otrais"]:
-                rekošais_stavs = "2. stāvs"
-            i += 2
-            continue
             
-        # Sortiments (ņemot vērā "malta" -> malka)
+        # Sortiments
         if word in ["puse", "puslietas", "pl"]:
             rekošais_sortiments = "PL"
             i += 1
             continue
-        elif word in ["malka", "malta", "m"]:
+        elif word in ["malka", "malta", "malē", "m"]:
             rekošais_sortiments = "M"
             i += 1
             continue
@@ -117,7 +113,7 @@ def parsat_tekstu(teksts):
                     rekošais_sortiments = "PL"
                     i += 1
                     continue
-                elif next_word in ["malka", "malta", "m"]:
+                elif next_word in ["malka", "malta", "malē", "m"]:
                     rekošais_sortiments = "M"
                     i += 1
                     continue
@@ -193,7 +189,7 @@ if uploaded_file is not None:
                 
                 st.subheader("📋 Dastošanas Lapa (Koku skaits pa sugām un sortimentiem)")
                 dastlapa_df = izveidot_dastlapu_matrix(df)
-                st.dataframe(dastlapa_df, use_container_width=True)
+                st.dataframe(dastlapa_df, use_container_width+True)
                 
                 with st.expander("Skatīt detalizētu sarakstu (katru koku atsevišķi)"):
                     st.dataframe(df, use_container_width=True)
