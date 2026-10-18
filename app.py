@@ -7,7 +7,7 @@ import os
 st.set_page_config(page_title="Meža Dastošanas Asistents", layout="wide")
 
 st.title("🌲 Meža Dastošanas Balss Asistents")
-st.write("Augšupielādē telefona audio ierakstu, un programma atpazīs un sakārtos datus pilnā dastlapas tabulā.")
+st.write("Augšupielādē telefona audio ierakstu (.m4a, .mp3, .wav), un programma atpazīs visas sugas, sortimentus un diametrus.")
 
 @st.cache_resource
 def load_whisper_model():
@@ -24,22 +24,29 @@ uploaded_file = st.file_uploader(
 def parse_diametrs(word):
     word_clean = word.strip(",.-")
     if word_clean.isdigit():
-        return int(word_clean)
+        val = int(word_clean)
+        if 6 <= val <= 70: # Reālas dastošanas diametra robežas
+            return val
     
+    # Fonētiskās korekcijas skaitļiem
     if "čaitr" in word_clean or "četr" in word_clean or "četri" in word_clean or "štētri" in word_clean:
         return 24
-    if "diod" in word_clean or "divp" in word_clean or "divas" in word_clean:
+    if "diod" in word_clean or "divp" in word_clean or "divas" in word_clean or "divpadsmit" in word_clean:
         return 12
     if "sašt" in word_clean or "sešp" in word_clean or "sešpadsmit" in word_clean:
         return 16
-    if "astoņ" in word_clean:
+    if "astoņ" in word_clean or "astoņi" in word_clean:
         return 8
     if "divd" in word_clean or "divdesmit" in word_clean:
         return 20
-    if "tasto" in word_clean or "trīs" in word_clean:
+    if "tasto" in word_clean or "trīs" in word_clean or "trīsdesmit" in word_clean:
         return 32
     if "desmit" in word_clean or "des" in word_clean:
         return 10
+    if "četrdesmit" in word_clean:
+        return 40
+    if "sešdesmit" in word_clean:
+        return 60
     
     return None
 
@@ -48,14 +55,16 @@ def parsat_tekstu(teksts):
         "egle": "Egle",
         "egla": "Egle",
         "priede": "Priede",
+        "priedes": "Priede",
         "bērzs": "Bērzs",
         "bērzi": "Bērzs",
         "apse": "Apse",
+        "apses": "Apse",
         "melnalksnis": "Melnalksnis",
         "melnais": "Melnalksnis",
         "baltalksnis": "Baltalksnis",
         "baltais": "Baltalksnis",
-        "alksnis": "Melnalksnis", # Noklusējuma alksnis parasti ir melnalksnis
+        "alksnis": "Melnalksnis",
         "blīgzna": "Blīgzna",
         "kļava": "Kļava",
         "osis": "Osis",
@@ -67,33 +76,31 @@ def parsat_tekstu(teksts):
     
     words = teksts.lower().split()
     dati = []
+    
+    # Elastīga stāvokļa mainīgie (State Machine)
     rekošais_stavs = "1. stāvs"
-    treniska_suga = None
-    rekošais_sortiments = "L"
+    treniska_suga = "Egle" # Noklusējuma suga, ja pirmajā mirklī nav nosaukta
+    rekošais_sortiments = "L" # Noklusējuma sortiments: Lieta (L)
     
     i = 0
     while i < len(words):
         word = words[i].strip(",.-")
         
-        # Saliktās sugas (Piemēram: melnais alksnis / baltais alksnis)
-        if word in ["melnais", "baltais"] and i + 1 < len(words) and "alksn" in words[i+1]:
-            full_alksnis = f"{word} alksnis"
-            if "melnais" in word:
-                treniska_suga = "Melnalksnis"
-            else:
-                treniska_suga = "Baltalksnis"
+        # Stāvi
+        if word in ["pirmais", "1."] and i + 1 < len(words) and "stāv" in words[i+1]:
+            rekošais_stavs = "1. stāvs"
             i += 2
             continue
-
-        if word in ["pirmais", "1.", "pirmā"]:
-            rekošais_stavs = "1. stāvs"
-            i += 1
+        elif word in ["otrais", "2."] and i + 1 < len(words) and "stāv" in words[i+1]:
+            rekošais_stavs = "2. stāvs"
+            i += 2
             continue
         elif word in ["otrais", "2.", "otrā", "oģrā"]:
             rekošais_stavs = "2. stāvs"
             i += 1
             continue
             
+        # Sortimenti
         if word in ["puse", "puslietas", "pl"]:
             rekošais_sortiments = "PL"
             i += 1
@@ -106,60 +113,45 @@ def parsat_tekstu(teksts):
             rekošais_sortiments = "L"
             i += 1
             continue
-        
+            
+        # Alksniskās saliktās sugas
+        if word in ["melnais", "baltais"] and i + 1 < len(words) and "alksn" in words[i+1]:
+            treniska_suga = "Melnalksnis" if "melnais" in word else "Baltalksnis"
+            i += 2
+            continue
+
+        # Parastās sugas
         matched_suga = None
         for key, val in sugu_kartpe.items():
-            if word == key or word.startswith(key):
+            if word == key:
                 matched_suga = val
                 break
         
         if matched_suga:
             treniska_suga = matched_suga
             i += 1
-            while i < len(words):
-                next_word = words[i].strip(",.-")
-                if next_word in ["puse", "puslietas", "pl"]:
-                    rekošais_sortiments = "PL"
-                    i += 1
-                    continue
-                elif next_word in ["malka", "malta", "m"]:
-                    rekošais_sortiments = "M"
-                    i += 1
-                    continue
-                elif next_word in ["lieta", "l"]:
-                    rekošais_sortiments = "L"
-                    i += 1
-                    continue
-                    
-                diam = parse_diametrs(next_word)
-                if diam is not None:
-                    dati.append({
-                        "Stāvs": rekošais_stavs,
-                        "Suga": treniska_suga,
-                        "Sortiments": rekošais_sortiments,
-                        "Diametrs": diam
-                    })
-                    rekošais_sortiments = "L"
-                    i += 1
-                else:
-                    break
-        else:
-            diam = parse_diametrs(word)
-            if diam is not None and treniska_suga:
-                dati.append({
-                    "Stāvs": rekošais_stavs,
-                    "Suga": treniska_suga,
-                    "Sortiments": rekošais_sortiments,
-                    "Diametrs": diam
-                })
-                rekošais_sortiments = "L"
+            continue
+            
+        # Pārbaudām vai vārds ir diametrs
+        diam = parse_diametrs(word)
+        if diam is not None:
+            dati.append({
+                "Stāvs": rekošais_stavs,
+                "Suga": treniska_suga,
+                "Sortiments": rekošais_sortiments,
+                "Diametrs": diam
+            })
+            # Pēc diametra nolasīšanas sortiments atgriežas uz noklusējuma 'L' (Lieta), ja vien nebija minēts citādi
+            rekošais_sortiments = "L"
             i += 1
+            continue
+            
+        i += 1
             
     return dati
 
 def izveidot_dastlapu_matrix(df):
     pakapes = [8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60]
-    # Atjaunināts sugu saraksts ar Melnalksni, Baltalksni un Liepu
     sugas = ["Egle", "Priede", "Bērzs", "Apse", "Melnalksnis", "Baltalksnis", "Ozols", "Osis", "Liepa", "Kļava", "Vītols", "Goba", "Blīgzna"]
     sortimenti = ["L", "PL", "M"]
     
@@ -170,14 +162,17 @@ def izveidot_dastlapu_matrix(df):
     
     multi_index = pd.MultiIndex.from_tuples(index_tuples, names=['Suga', 'Sortiments'])
     
-    pivot = pd.pivot_table(
-        df, 
-        index='Diametrs', 
-        columns=['Suga', 'Sortiments'], 
-        aggfunc='size', 
-        fill_value=0
-    )
-    
+    if not df.empty:
+        pivot = pd.pivot_table(
+            df, 
+            index='Diametrs', 
+            columns=['Suga', 'Sortiments'], 
+            aggfunc='size', 
+            fill_value=0
+        )
+    else:
+        pivot = pd.DataFrame(index=pakapes)
+
     pivot = pivot.reindex(index=pakapes, columns=multi_index, fill_value=0)
     pivot.index.name = 'Diametra pakāpe'
     
@@ -189,26 +184,26 @@ if uploaded_file is not None:
         tmp_path = tmp_file.name
 
     if st.button("Sākt audio faila apstrādi", type="primary"):
-        with st.spinner("Notiek balss atpazīšana un koku šķirošana..."):
+        with st.spinner("Notiek balss atpazīšana un visu koku šķirošana..."):
             try:
                 result = model.transcribe(
                     tmp_path, 
                     language="lv", 
-                    initial_prompt="Egle, priede, bērzs, apse, melnalksnis, baltalksnis, liepa, malka, puse, diametrs, stāvs, 8, 12, 16, 20, 24, 28, 32, 36"
+                    initial_prompt="Egle, priede, bērzs, apse, melnalksnis, baltalksnis, liepa, ozols, osis, malka, puse, lieta, diametrs, stāvs, 8, 12, 16, 20, 24, 28, 32, 36"
                 )
                 teksts = result["text"].lower()
                 
-                st.info(f"**Atpazītais teksts:**\n\n\"{teksts}\"")
+                st.info(f"**Whisper atpazītais teksts (pārbaudei):**\n\n\"{teksts}\"")
                 
                 dati = parsat_tekstu(teksts)
                 
                 if dati:
                     df = pd.DataFrame(dati)
-                    st.success("Dastlapa sagatavota!")
+                    st.success("Dastlapa veiksmīgi sagatavota!")
                     
                     st.subheader("📋 Pilna Dastošanas Lapa")
                     dastlapa_df = izveidot_dastlapu_matrix(df)
-                    st.dataframe(dastlapa_df, use_container_width=True)
+                    st.dataframe(dastlapa_df, use_container_width+True)
                     
                     with st.expander("Skatīt detalizētu koku sarakstu"):
                         st.dataframe(df, use_container_width=True)
@@ -221,7 +216,7 @@ if uploaded_file is not None:
                         mime="text/csv"
                     )
                 else:
-                    st.warning("Tekstā neizdevās atpazīt datus. Pārbaudi, vai ierakstā skaidri nosaukta suga un diametrs.")
+                    st.warning("Tekstā neizdevās atpazīt datus. Pārbaudi, vai ierakstā skaidri nosaukta suga un izmērs.")
             except Exception as e:
                 st.error(f"Kļūda apstrādē: {e}")
 
