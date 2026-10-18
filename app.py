@@ -7,7 +7,7 @@ import os
 st.set_page_config(page_title="Meža Dastošanas Asistents", layout="wide")
 
 st.title("🌲 Meža Dastošanas Balss Asistents")
-st.write("Augšupielādē telefona audio ierakstu (.m4a, .mp3, .wav), un programma to automātiski pārvērtīs dastlapas tabulā.")
+st.write("Augšupielādē telefona audio ierakstu, un programma atpazīs un sakārtos datus pilnā dastlapas tabulā.")
 
 @st.cache_resource
 def load_whisper_model():
@@ -26,7 +26,6 @@ def parse_diametrs(word):
     if word_clean.isdigit():
         return int(word_clean)
     
-    # Pielāgojamies fonētiskajām kļūdām skaitļos
     if "čaitr" in word_clean or "četr" in word_clean or "četri" in word_clean or "štētri" in word_clean:
         return 24
     if "diod" in word_clean or "divp" in word_clean or "divas" in word_clean:
@@ -50,17 +49,20 @@ def parsat_tekstu(teksts):
         "egla": "Egle",
         "priede": "Priede",
         "bērzs": "Bērzs",
+        "bērzi": "Bērzs",
         "apse": "Apse",
-        "alksnis": "Alksnis",
-        "balts": "Baltalksnis",
+        "melnalksnis": "Melnalksnis",
+        "melnais": "Melnalksnis",
         "baltalksnis": "Baltalksnis",
+        "baltais": "Baltalksnis",
+        "alksnis": "Melnalksnis", # Noklusējuma alksnis parasti ir melnalksnis
         "blīgzna": "Blīgzna",
         "kļava": "Kļava",
         "osis": "Osis",
         "vītols": "Vītols",
         "goba": "Goba",
         "ozols": "Ozols",
-        "līpa": "Līpa"
+        "liepa": "Liepa"
     }
     
     words = teksts.lower().split()
@@ -73,6 +75,16 @@ def parsat_tekstu(teksts):
     while i < len(words):
         word = words[i].strip(",.-")
         
+        # Saliktās sugas (Piemēram: melnais alksnis / baltais alksnis)
+        if word in ["melnais", "baltais"] and i + 1 < len(words) and "alksn" in words[i+1]:
+            full_alksnis = f"{word} alksnis"
+            if "melnais" in word:
+                treniska_suga = "Melnalksnis"
+            else:
+                treniska_suga = "Baltalksnis"
+            i += 2
+            continue
+
         if word in ["pirmais", "1.", "pirmā"]:
             rekošais_stavs = "1. stāvs"
             i += 1
@@ -147,6 +159,17 @@ def parsat_tekstu(teksts):
 
 def izveidot_dastlapu_matrix(df):
     pakapes = [8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60]
+    # Atjaunināts sugu saraksts ar Melnalksni, Baltalksni un Liepu
+    sugas = ["Egle", "Priede", "Bērzs", "Apse", "Melnalksnis", "Baltalksnis", "Ozols", "Osis", "Liepa", "Kļava", "Vītols", "Goba", "Blīgzna"]
+    sortimenti = ["L", "PL", "M"]
+    
+    index_tuples = []
+    for suga in sugas:
+        for sort in sortimenti:
+            index_tuples.append((suga, sort))
+    
+    multi_index = pd.MultiIndex.from_tuples(index_tuples, names=['Suga', 'Sortiments'])
+    
     pivot = pd.pivot_table(
         df, 
         index='Diametrs', 
@@ -154,8 +177,10 @@ def izveidot_dastlapu_matrix(df):
         aggfunc='size', 
         fill_value=0
     )
-    pivot = pivot.reindex(pakapes, fill_value=0)
+    
+    pivot = pivot.reindex(index=pakapes, columns=multi_index, fill_value=0)
     pivot.index.name = 'Diametra pakāpe'
+    
     return pivot
 
 if uploaded_file is not None:
@@ -169,7 +194,7 @@ if uploaded_file is not None:
                 result = model.transcribe(
                     tmp_path, 
                     language="lv", 
-                    initial_prompt="Egle, priede, bērzs, apse, alksnis, malka, puse, diametrs, stāvs, 8, 12, 16, 20, 24, 28, 32, 36"
+                    initial_prompt="Egle, priede, bērzs, apse, melnalksnis, baltalksnis, liepa, malka, puse, diametrs, stāvs, 8, 12, 16, 20, 24, 28, 32, 36"
                 )
                 teksts = result["text"].lower()
                 
@@ -181,7 +206,7 @@ if uploaded_file is not None:
                     df = pd.DataFrame(dati)
                     st.success("Dastlapa sagatavota!")
                     
-                    st.subheader("📋 Dastošanas Lapa")
+                    st.subheader("📋 Pilna Dastošanas Lapa")
                     dastlapa_df = izveidot_dastlapu_matrix(df)
                     st.dataframe(dastlapa_df, use_container_width=True)
                     
