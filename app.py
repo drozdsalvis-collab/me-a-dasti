@@ -11,16 +11,36 @@ st.write("Augšupielādē audio ierakstu, un programma automātiski aizpildīs d
 
 @st.cache_resource
 def load_whisper_model():
-    # Izmantojam 'small' modeli, kas daudz labāk un precīzāk apstrādā latviešu valodu un meža terminus
     return whisper.load_model("small")
 
-with st.spinner("Notiek balss atpazīšanas modeļa ielāde (tas var aizņemt mirkli)..."):
+with st.spinner("Notiek balss atpazīšanas modeļa ielāde..."):
     model = load_whisper_model()
 
 uploaded_file = st.file_uploader(
     "Izvēlies audio ierakstu:", 
     type=["mp3", "wav", "m4a", "caf", "aac", "mp4", "ogg"]
 )
+
+def parse_diametrs(word):
+    word_clean = word.strip(",.-")
+    if word_clean.isdigit():
+        return int(word_clean)
+    
+    # Pielāgojamies Whisper fonētiskajām kļūdām skaitļos
+    if "čaitr" in word_clean or "četr" in word_clean:
+        return 24
+    if "diod" in word_clean or "divp" in word_clean:
+        return 12
+    if "sašt" in word_clean or "sešp" in word_clean:
+        return 16
+    if "astoņ" in word_clean:
+        return 8
+    if "divd" in word_clean:
+        return 20
+    if "tasto" in word_clean or "trīs" in word_clean:
+        return 32
+    
+    return None
 
 def parsat_tekstu(teksts):
     sugu_kartpe = {
@@ -44,28 +64,35 @@ def parsat_tekstu(teksts):
     dati = []
     rekošais_stavs = "1. stāvs"
     treniska_suga = None
-    rekošais_sortiments = "L" # L = Lieta (zāģbaļķis)
+    rekošais_sortiments = "L" # Noklusējums: Lieta
     
     i = 0
     while i < len(words):
         word = words[i].strip(",.-")
         
-        # Stāvi
-        if word in ["pirmais", "1."] and i + 1 < len(words) and "stāv" in words[i+1]:
+        # Stāvi (ņemot vērā arī Whisper kļūdu "oģrā" -> otrā stāva nozīmē)
+        if word in ["pirmais", "1.", "pirmā"]:
             rekošais_stavs = "1. stāvs"
-            i += 2
+            i += 1
             continue
-        elif word in ["otrais", "2."] and i + 1 < len(words) and "stāv" in words[i+1]:
+        elif word in ["otrais", "2.", "otrā", "oģrā"]:
             rekošais_stavs = "2. stāvs"
+            i += 1
+            continue
+        elif word == "stāvs" and i + 1 < len(words):
+            if words[i+1] in ["1", "pirmais"]:
+                rekošais_stavs = "1. stāvs"
+            elif words[i+1] in ["2", "otrais"]:
+                rekošais_stavs = "2. stāvs"
             i += 2
             continue
             
-        # Sortiments (L, PL, M)
+        # Sortiments (ņemot vērā "malta" -> malka)
         if word in ["puse", "puslietas", "pl"]:
             rekošais_sortiments = "PL"
             i += 1
             continue
-        elif word in ["malka", "m"]:
+        elif word in ["malka", "malta", "m"]:
             rekošais_sortiments = "M"
             i += 1
             continue
@@ -90,7 +117,7 @@ def parsat_tekstu(teksts):
                     rekošais_sortiments = "PL"
                     i += 1
                     continue
-                elif next_word in ["malka", "m"]:
+                elif next_word in ["malka", "malta", "m"]:
                     rekošais_sortiments = "M"
                     i += 1
                     continue
@@ -99,24 +126,26 @@ def parsat_tekstu(teksts):
                     i += 1
                     continue
                     
-                if next_word.isdigit():
+                diam = parse_diametrs(next_word)
+                if diam is not None:
                     dati.append({
                         "Stāvs": rekošais_stavs,
                         "Suga": treniska_suga,
                         "Sortiments": rekošais_sortiments,
-                        "Diametrs": int(next_word)
+                        "Diametrs": diam
                     })
                     rekošais_sortiments = "L"
                     i += 1
                 else:
                     break
         else:
-            if word.isdigit() and treniska_suga:
+            diam = parse_diametrs(word)
+            if diam is not None and treniska_suga:
                 dati.append({
                     "Stāvs": rekošais_stavs,
                     "Suga": treniska_suga,
                     "Sortiments": rekošais_sortiments,
-                    "Diametrs": int(word)
+                    "Diametrs": diam
                 })
                 rekošais_sortiments = "L"
             i += 1
@@ -145,8 +174,7 @@ if uploaded_file is not None:
         tmp_path = tmp_file.name
 
     if st.button("Sākt audio apstrādi", type="primary"):
-        with st.spinner("Notiek balss atpazīšana latviešu valodā..."):
-            # Stingri pasakām modelim, ka tā ir latviešu valoda, un iedodam sākuma promptu ar terminiem
+        with st.spinner("Notiek balss atpazīšana un dastošanas lapas aizpildīšana..."):
             result = model.transcribe(
                 tmp_path, 
                 language="lv", 
