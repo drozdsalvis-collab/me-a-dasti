@@ -4,14 +4,9 @@ import pandas as pd
 st.set_page_config(page_title="Meža Dastošanas Asistents", layout="wide")
 
 st.title("🌲 Meža Dastošanas Asistents")
-st.write("Mobilā dastošanas lapa. Ievadi vai diktē datus (piemēram: *egle puse 24, egle malka 24, otrais stāvs egle 12*).")
+st.write("Mobilā dastošanas lapa. Ievadi vai diktē datus (piemēram: *egle puse 24, egle malka 24*).")
 
-# Ievades lauks - šeit vari izmantot arī telefona tastatūras mikrofonu (balss diktēšanu)
-teksts_input = st.text_area(
-    "Nosauciet vai ierakstiet dastošanas datus:", 
-    "", 
-    placeholder="Piemēram: egle puse 24, egle malka 24, bērzs 32..."
-)
+teksts_input = st.text_area("Ievadi vai diktē datus šeit:", placeholder="Piemēram: egle puse 24, egle malka 24, bērzs 32...")
 
 def parsat_tekstu(teksts):
     sugu_kartpe = {
@@ -35,13 +30,12 @@ def parsat_tekstu(teksts):
     dati = []
     rekošais_stavs = "1. stāvs"
     treniska_suga = None
-    rekošais_sortiments = "L" # Noklusējums: Lieta
+    rekošais_sortiments = "L"
     
     i = 0
     while i < len(words):
         word = words[i].strip(",.-")
         
-        # Stāvu noteikšana
         if word in ["pirmais", "1.", "pirmā"]:
             rekošais_stavs = "1. stāvs"
             i += 1
@@ -51,7 +45,6 @@ def parsat_tekstu(teksts):
             i += 1
             continue
             
-        # Sortimenta noteikšana
         if word in ["puse", "puslietas", "pl"]:
             rekošais_sortiments = "PL"
             i += 1
@@ -65,7 +58,6 @@ def parsat_tekstu(teksts):
             i += 1
             continue
         
-        # Sugas noteikšana
         matched_suga = None
         for key, val in sugu_kartpe.items():
             if word == key or word.startswith(key):
@@ -116,7 +108,6 @@ def parsat_tekstu(teksts):
 
 def izveidot_dastlapu_matrix(df):
     pakapes = [8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60]
-    
     pivot = pd.pivot_table(
         df, 
         index='Diametrs', 
@@ -124,35 +115,22 @@ def izveidot_dastlapu_matrix(df):
         aggfunc='size', 
         fill_value=0
     )
-    
     pivot = pivot.reindex(pakapes, fill_value=0)
     pivot.index.name = 'Diametra pakāpe'
-    
     return pivot
 
 if st.button("Ģenerēt Dastlapu", type="primary"):
     if teksts_input.strip():
         dati = parsat_tekstu(teksts_input)
-        
         if dati:
             df = pd.DataFrame(dati)
-            st.success("Dastošanas lapa veiksmīgi sagatavota!")
-            
-            st.subheader("📋 Dastošanas Lapa (Tabula)")
+            st.success("Dastlapa sagatavota!")
             dastlapa_df = izveidot_dastlapu_matrix(df)
             st.dataframe(dastlapa_df, use_container_width=True)
             
-            with st.expander("Skatīt koku sarakstu"):
-                st.dataframe(df, use_container_width=True)
-            
             csv = dastlapa_df.to_csv().encode('utf-8')
-            st.download_button(
-                label="📥 Lejupielādēt Dastlapu (CSV)",
-                data=csv,
-                file_name="dastlapa.csv",
-                mime="text/csv"
-            )
+            st.download_button("📥 Lejupielādēt CSV", data=csv, file_name="dastlapa.csv", mime="text/csv")
         else:
-            st.warning("Neizdevās atpazīt datus. Pārbaudi, vai norādīta suga un diametrs.")
+            st.warning("Neizdevās atpazīt datus.")
     else:
-        st.warning("Lūdzu, ievadi datus lodziņā.")
+        st.warning("Ievadi datus.")
