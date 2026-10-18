@@ -7,16 +7,20 @@ import os
 st.set_page_config(page_title="Meža Dastošanas Asistents", layout="wide")
 
 st.title("🌲 Meža Dastošanas Balss Asistents")
-st.write("Augšupielādē audio ierakstu (mp3, wav, m4a), un programma automātiski aizpildīs dastošanas lapas tabulu.")
+st.write("Augšupielādē audio ierakstu, un programma automātiski aizpildīs dastošanas lapas tabulu.")
 
 @st.cache_resource
 def load_whisper_model():
-    return whisper.load_model("base")
+    # Izmantojam 'small' modeli, kas daudz labāk un precīzāk apstrādā latviešu valodu un meža terminus
+    return whisper.load_model("small")
 
-with st.spinner("Notiek balss atpazīšanas modeļa ielāde..."):
+with st.spinner("Notiek balss atpazīšanas modeļa ielāde (tas var aizņemt mirkli)..."):
     model = load_whisper_model()
 
-uploaded_file = st.file_uploader("Izvēlies audio ierakstu:", type=["mp3", "wav", "m4a"])
+uploaded_file = st.file_uploader(
+    "Izvēlies audio ierakstu:", 
+    type=["mp3", "wav", "m4a", "caf", "aac", "mp4", "ogg"]
+)
 
 def parsat_tekstu(teksts):
     sugu_kartpe = {
@@ -141,8 +145,13 @@ if uploaded_file is not None:
         tmp_path = tmp_file.name
 
     if st.button("Sākt audio apstrādi", type="primary"):
-        with st.spinner("Notiek balss atpazīšana un dastošanas lapas aizpildīšana..."):
-            result = model.transcribe(tmp_path, language="lv")
+        with st.spinner("Notiek balss atpazīšana latviešu valodā..."):
+            # Stingri pasakām modelim, ka tā ir latviešu valoda, un iedodam sākuma promptu ar terminiem
+            result = model.transcribe(
+                tmp_path, 
+                language="lv", 
+                initial_prompt="Egle, priede, bērzs, apse, alksnis, malka, puse, diametrs, stāvs, 8, 12, 16, 20, 24, 28, 32, 36"
+            )
             teksts = result["text"].lower()
             
             st.info(f"**Atpazītais teksts:**\n\n\"{teksts}\"")
@@ -173,4 +182,3 @@ if uploaded_file is not None:
 
     if os.path.exists(tmp_path):
         os.remove(tmp_path)
-
