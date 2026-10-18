@@ -25,10 +25,9 @@ def parse_diametrs(word):
     word_clean = word.strip(",.-")
     if word_clean.isdigit():
         val = int(word_clean)
-        if 6 <= val <= 70: # Reālas dastošanas diametra robežas
+        if 6 <= val <= 70:
             return val
     
-    # Fonētiskās korekcijas skaitļiem
     if "čaitr" in word_clean or "četr" in word_clean or "četri" in word_clean or "štētri" in word_clean:
         return 24
     if "diod" in word_clean or "divp" in word_clean or "divas" in word_clean or "divpadsmit" in word_clean:
@@ -58,6 +57,7 @@ def parsat_tekstu(teksts):
         "priedes": "Priede",
         "bērzs": "Bērzs",
         "bērzi": "Bērzs",
+        "bēr": "Bērzs",
         "apse": "Apse",
         "apses": "Apse",
         "melnalksnis": "Melnalksnis",
@@ -77,16 +77,14 @@ def parsat_tekstu(teksts):
     words = teksts.lower().split()
     dati = []
     
-    # Elastīga stāvokļa mainīgie (State Machine)
     rekošais_stavs = "1. stāvs"
-    treniska_suga = "Egle" # Noklusējuma suga, ja pirmajā mirklī nav nosaukta
-    rekošais_sortiments = "L" # Noklusējuma sortiments: Lieta (L)
+    treniska_suga = "Egle"
+    rekošais_sortiments = "L"
     
     i = 0
     while i < len(words):
         word = words[i].strip(",.-")
         
-        # Stāvi
         if word in ["pirmais", "1."] and i + 1 < len(words) and "stāv" in words[i+1]:
             rekošais_stavs = "1. stāvs"
             i += 2
@@ -100,7 +98,6 @@ def parsat_tekstu(teksts):
             i += 1
             continue
             
-        # Sortimenti
         if word in ["puse", "puslietas", "pl"]:
             rekošais_sortiments = "PL"
             i += 1
@@ -114,16 +111,14 @@ def parsat_tekstu(teksts):
             i += 1
             continue
             
-        # Alksniskās saliktās sugas
         if word in ["melnais", "baltais"] and i + 1 < len(words) and "alksn" in words[i+1]:
             treniska_suga = "Melnalksnis" if "melnais" in word else "Baltalksnis"
             i += 2
             continue
 
-        # Parastās sugas
         matched_suga = None
         for key, val in sugu_kartpe.items():
-            if word == key:
+            if word == key or word.startswith(key):
                 matched_suga = val
                 break
         
@@ -132,7 +127,6 @@ def parsat_tekstu(teksts):
             i += 1
             continue
             
-        # Pārbaudām vai vārds ir diametrs
         diam = parse_diametrs(word)
         if diam is not None:
             dati.append({
@@ -141,7 +135,6 @@ def parsat_tekstu(teksts):
                 "Sortiments": rekošais_sortiments,
                 "Diametrs": diam
             })
-            # Pēc diametra nolasīšanas sortiments atgriežas uz noklusējuma 'L' (Lieta), ja vien nebija minēts citādi
             rekošais_sortiments = "L"
             i += 1
             continue
@@ -193,7 +186,7 @@ if uploaded_file is not None:
                 )
                 teksts = result["text"].lower()
                 
-                st.info(f"**Whisper atpazītais teksts (pārbaudei):**\n\n\"{teksts}\"")
+                st.info(f"**Atpazītais teksts:**\n\n\"{teksts}\"")
                 
                 dati = parsat_tekstu(teksts)
                 
@@ -203,7 +196,7 @@ if uploaded_file is not None:
                     
                     st.subheader("📋 Pilna Dastošanas Lapa")
                     dastlapa_df = izveidot_dastlapu_matrix(df)
-                    st.dataframe(dastlapa_df, use_container_width+True)
+                    st.dataframe(dastlapa_df, use_container_width=True)
                     
                     with st.expander("Skatīt detalizētu koku sarakstu"):
                         st.dataframe(df, use_container_width=True)
