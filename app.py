@@ -1,5 +1,5 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 import json
 import pandas as pd
 import io
@@ -42,57 +42,59 @@ if not api_key:
 uploaded_file = st.file_uploader("Pievieno audio failu (.mp3, .wav, .m4a)", type=["mp3", "wav", "m4a"])
 
 if uploaded_file and api_key:
-    openai.api_key = api_key
-    
-    if st.button("Sākt apstrādi"):
-        with st.spinner("Transkribē audio tekstā..."):
-            try:
-                # Nosūta failu tieši uz OpenAI Whisper API
-                transcript = openai.Audio.transcribe(
+    try:
+        # Inicializē jauno OpenAI klientu
+        client = OpenAI(api_key=api_key)
+        
+        if st.button("Sākt apstrādi"):
+            with st.spinner("Transkribē audio tekstā..."):
+                # Jaunā sintakse audio transkripcijai
+                transcript = client.audio.transcriptions.create(
                     model="whisper-1", 
                     file=uploaded_file, 
                     language="lv",
                     prompt="Priede, Egle, Bērzs, Melnalksnis, Baltalksnis, Apse, Liepa, puse, malka, diametrs"
                 )
                 
-                full_transcript = transcript["text"]
+                full_transcript = transcript.text
                 
                 st.subheader("1. Atpazītais teksts:")
                 st.info(full_transcript)
                 
-                with st.spinner("Kārto datus tabulā (L, PL, Malka)..."):
-                    response = openai.ChatCompletion.create(
-                        model="gpt-4o",
-                        messages=[
-                            {"role": "system", "content": DASTOSANAS_PROMPTS},
-                            {"role": "user", "content": f"Apstrādā šo transkriptu: {full_transcript}"}
-                        ],
-                        temperature=0
-                    )
-                    
-                    raw_json = response.choices[0].message.content.strip()
-                    if raw_json.startswith("```json"):
-                        raw_json = raw_json[7:-3].strip()
-                    elif raw_json.startswith("```"):
-                        raw_json = raw_json[3:-3].strip()
+            with st.spinner("Kārto datus tabulā (L, PL, Malka)..."):
+                # Jaunā sintakse čatam / datu strukturēšanai
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": DASTOSANAS_PROMPTS},
+                        {"role": "user", "content": f"Apstrādā šo transkriptu: {full_transcript}"}
+                    ],
+                    temperature=0
+                )
+                
+                raw_json = response.choices[0].message.content.strip()
+                if raw_json.startswith("```json"):
+                    raw_json = raw_json[7:-3].strip()
+                elif raw_json.startswith("```"):
+                    raw_json = raw_json[3:-3].strip()
                         
-                    data = json.loads(raw_json)
-                    df = pd.DataFrame(data)
+                data = json.loads(raw_json)
+                df = pd.DataFrame(data)
+                
+                st.subheader("2. Gatavā dastlapa:")
+                st.dataframe(df, use_container_width=True)
+                
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Dastlapa')
+                excel_data = output.getvalue()
+                
+                st.download_button(
+                    label="📥 Lejuplādēt Excel failu",
+                    data=excel_data,
+                    file_name="dastlapa.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
                     
-                    st.subheader("2. Gatavā dastlapa:")
-                    st.dataframe(df, use_container_width=True)
-                    
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df.to_excel(writer, index=False, sheet_name='Dastlapa')
-                    excel_data = output.getvalue()
-                    
-                    st.download_button(
-                        label="📥 Lejuplādēt Excel failu",
-                        data=excel_data,
-                        file_name="dastlapa.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                    
-            except Exception as e:
-                st.error(f"Kļūda apstrādē: {e}")
+    except Exception as e:
+        st.error(f"Kļūda apstrādē: {e}")
