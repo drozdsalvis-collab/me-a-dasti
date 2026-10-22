@@ -1,6 +1,5 @@
 import streamlit as st
 import openai
-from pydub import AudioSegment
 import json
 import pandas as pd
 import io
@@ -10,10 +9,9 @@ st.set_page_config(page_title="Meža Dastošanas Asistents", layout="wide")
 st.title("🌲 Meža Dastošanas Balss Apstrāde")
 st.write("Augšupielādē meža balss ierakstu, lai automātiski iegūtu gatavu dastošanas tabulu.")
 
-# Sistēmas instrukcija dastošanas loģikai
 DASTOSANAS_PROMPTS = """
 Tu esi profesionāls meža taksācijas datu apstrādātājs.
-Tavs vienīgais uzdevums ir pārvērst meža dastošanas balss transkriptu tīrā JSON datu structures sarakstā.
+Tavs vienīgais uzdevums ir pārvērst meža dastošanas balss transkriptu tīrā JSON datu strukturētā sarakstā.
 
 KOKU SUGAS: Priede, Egle, Bērzs, Melnalksnis, Baltalksnis, Apse, Liepa, Ozols, Osis u.c.
 
@@ -24,19 +22,11 @@ KATEGORIJAS / SORTIMENTI (OBLIGĀTI):
    - Skaitlis (vai skaitļi), kas seko TIEŠI AIZ vārda "puse", pieder pie kategorijas "PL" (Puslietas koksne).
 3. Ja tiek pateikts "malka", "mal" vai "M", sekojošie skaitļi pieder pie "Malka".
 
-PIEMĒRS 1:
+PIEMĒRS:
 Ievade: "Bērzs 24 puse 28"
 Iznākums:
 - Suga: Bērzs, Diametrs: 24, Kategorija: L
 - Suga: Bērzs, Diametrs: 28, Kategorija: PL
-
-PIEMĒRS 2:
-Ievade: "Egle 18 22 puse 26 malka 14"
-Iznākums:
-- Suga: Egle, Diametrs: 18, Kategorija: L
-- Suga: Egle, Diametrs: 22, Kategorija: L
-- Suga: Egle, Diametrs: 26, Kategorija: PL
-- Suga: Egle, Diametrs: 14, Kategorija: Malka
 
 Izvades formāts: TIKAI tīrs JSON masīvs bez papildu teksta:
 [
@@ -45,7 +35,6 @@ Izvades formāts: TIKAI tīrs JSON masīvs bez papildu teksta:
 ]
 """
 
-# Ievades lauks API atslēgai vai nolasa no secrets
 api_key = st.secrets.get("OPENAI_API_KEY", "")
 if not api_key:
     api_key = st.sidebar.text_input("Ievadi OpenAI API Atslēgu:", type="password")
@@ -56,34 +45,21 @@ if uploaded_file and api_key:
     openai.api_key = api_key
     
     if st.button("Sākt apstrādi"):
-        with st.spinner("Sadaļa audio un transkribē tekstā..."):
+        with st.spinner("Transkribē audio tekstā..."):
             try:
-                # 1. Ielādē audio un sadala 2 minūšu gabalos (lai serveris nenokartos)
-                sound = AudioSegment.from_file(uploaded_file)
-                two_minutes = 2 * 60 * 1000
-                chunks = [sound[i:i + two_minutes] for i in range(0, len(sound), two_minutes)]
+                # Nosūta failu tieši uz OpenAI Whisper API
+                transcript = openai.Audio.transcribe(
+                    model="whisper-1", 
+                    file=uploaded_file, 
+                    language="lv",
+                    prompt="Priede, Egle, Bērzs, Melnalksnis, Baltalksnis, Apse, Liepa, puse, malka, diametrs"
+                )
                 
-                full_transcript = ""
-                
-                for index, chunk in enumerate(chunks):
-                    buffer = io.BytesIO()
-                    buffer.name = f"chunk_{index}.mp3"
-                    chunk.export(buffer, format="mp3")
-                    buffer.seek(0)
-                    
-                    # Balss atpazīšana ar Whisper
-                    transcript = openai.Audio.transcribe(
-                        model="whisper-1", 
-                        file=buffer, 
-                        language="lv",
-                        prompt="Priede, Egle, Bērzs, Melnalksnis, Baltalksnis, Apse, Liepa, puse, malka, diametrs"
-                    )
-                    full_transcript += transcript["text"] + " "
+                full_transcript = transcript["text"]
                 
                 st.subheader("1. Atpazītais teksts:")
                 st.info(full_transcript)
                 
-                # 2. Datu strukturēšana tabulā
                 with st.spinner("Kārto datus tabulā (L, PL, Malka)..."):
                     response = openai.ChatCompletion.create(
                         model="gpt-4o",
@@ -95,7 +71,6 @@ if uploaded_file and api_key:
                     )
                     
                     raw_json = response.choices[0].message.content.strip()
-                    # Attīra JSON, ja modelis ielicis koda bloka iezīmes
                     if raw_json.startswith("```json"):
                         raw_json = raw_json[7:-3].strip()
                     elif raw_json.startswith("```"):
@@ -107,7 +82,6 @@ if uploaded_file and api_key:
                     st.subheader("2. Gatavā dastlapa:")
                     st.dataframe(df, use_container_width=True)
                     
-                    # Sagatavo Excel lejuplādei
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         df.to_excel(writer, index=False, sheet_name='Dastlapa')
